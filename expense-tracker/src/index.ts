@@ -29,27 +29,6 @@ app.get("/", (req: Request, res: Response) => {
   res.send(`Hello Expense `);
 });
 
-// app.get('/fullname', (req:Request, res:Response) => {
-//     const {firstName, lastName} = req.query ??''
-//     const fullName = `${firstName ??""}  ${lastName ??""}`
-//     console.log(res.send)
-//   res.send(`Fullname : ${fullName}`, )
-// })
-
-// app.get('/calculateSalary', (req:Request, res:Response) => {
-//     const { salary1, salary2 } = req.query
-//     const totalSalary = parseInt(salary1) + parseInt(salary2)
-//     res.send(`Total salary is ${totalSalary}`)
-// })
-
-// app.get("/average-sales", (req:Request, res:Response) => {
-//     const { salary1, salary2 } = req.query;
-//     const avgSales =
-//       parseInt(salary1) + parseInt(salary2);
-
-//     res.send(avgSales.toString());
-//   });
-
 // Expense tracker
 
 // CRUD filters, sorting, pagination, analytics , Export as excel,
@@ -58,11 +37,10 @@ app.get("/", (req: Request, res: Response) => {
   /*
     auth --> /register  | /login | logout | currentUser
     expense --> /create | update | delete | get | single expense | 
-
+// pagination sorting, filtering
     */
 }
 
-// Connect with DB
 const connectDB = async () => {
   try {
     await mongoose.connect(process.env.MONGO_URI ?? "");
@@ -73,16 +51,8 @@ const connectDB = async () => {
   }
 };
 
-// connectDB().then((res) => {
-//     app.listen(process.env.PORT, () => {
-//         console.log(`Expense tracker app listening on port ${process.env.PORT}`)
-//       })
-// }).catch(error => {
-//     console.log("Mongodb connection error", error)
-//      process.exit(1)
-// })
-
 connectDB();
+
 const userSchema = new Schema(
   {
     username: {
@@ -123,15 +93,12 @@ const expenseSchema = new Schema(
       type: String,
       required: true,
     },
-    name: {
-      type: Number,
-      required: true,
-    },
     description: {
       type: String,
     },
     category: {
       type: String,
+      required: true,
     },
     author: { type: Schema.Types.ObjectId, ref: "User" },
   },
@@ -177,6 +144,8 @@ app.get("/register", async (req: Request, res: Response) => {
     throw new Error("500, Something went wrong");
   }
 
+  // geberate token
+
   return res.status(201).json({
     user: createdUser,
     message: "User created successfully",
@@ -209,7 +178,98 @@ app.get("/login", async (req: Request, res: Response) => {
   });
 });
 
-app.get("/expense", (req, res) => {});
+// expense
+app.post("/expense", async (req: Request, res: Response) => {
+  const { amount, accountType, category, expenseType } = req.body;
+
+  console.log(amount, accountType, category, expenseType);
+
+  if (!amount || !accountType || !category || !expenseType) {
+    throw new Error("fields missing");
+  }
+
+  const createdExpense = await Expense.create({
+    amount,
+    accountType,
+    category,
+    expenseType,
+  });
+
+  const expense = await createdExpense.save();
+
+  res.status(201).json({
+    expense,
+    message: "Expense created successfully",
+  });
+});
+
+app.get("/expense", async (req: Request, res: Response) => {
+  const expenses = await Expense.find({});
+
+  res.status(200).json({
+    expenses,
+    message: "Expenses fetched successfully",
+  });
+});
+
+app.get("/expense/:id", async (req: Request, res: Response) => {
+  const { id } = req.params;
+  console.log({ id });
+  if (!id) {
+    throw new Error("Expense id not found");
+  }
+
+  const foundExpense = await Expense.findById({ _id: id });
+  console.log({ foundExpense });
+
+  res.status(200).json({
+    expense: foundExpense,
+    message: "Expense fetched successfully",
+  });
+});
+
+app.put("/expense/:expenseId", async (req: Request, res: Response) => {
+  const { expenseId } = req.params;
+  const { amount, accountType, category, expenseType } = req.body;
+  console.log({ expenseId });
+
+  if (!expenseId) {
+    throw new Error("Expense expenseId not found");
+  }
+
+  const updatedExpense = await Expense.findByIdAndUpdate(
+    expenseId,
+    {
+      amount,
+      accountType,
+      category,
+      expenseType,
+    },
+    { new: true },
+  );
+
+  res.status(200).json({
+    expense: updatedExpense,
+    message: "Expense updated successfully",
+  });
+});
+
+app.delete("/expense/:expenseId", async (req: Request, res: Response) => {
+    const { expenseId } = req.params;
+
+  if (!expenseId) {
+    throw new Error("NO expense id found");
+  }
+
+    const data = await Expense.findByIdAndDelete(expenseId);
+    console.log({data})
+
+  res.status(200).json({
+    deleted: true,
+    message: "Expense deleted successfully",
+  });
+});
+
 
 app.listen(process.env.PORT, () => {
   console.log(`Expense tracker app listening on port ${process.env.PORT}`);
