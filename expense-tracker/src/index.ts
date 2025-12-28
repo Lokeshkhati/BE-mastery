@@ -8,7 +8,6 @@ import cors from "cors";
 
 const app = express();
 
-// middleware to hanlde cors issue, accepts json with 16 kn limit
 app.use(express.json({ limit: "16kb" }));
 app.use(
   express.urlencoded({
@@ -34,18 +33,6 @@ dotenv.config({
 app.get("/", (req: Request, res: Response) => {
   res.send(`Hello Expense `);
 });
-
-// Expense tracker
-
-// CRUD filters, sorting, pagination, analytics , Export as excel,
-
-{
-  /*
-    auth --> /register  | /login | logout | currentUser
-    expense --> /create | update | delete | get | single expense | 
-// pagination sorting, filtering
-    */
-}
 
 interface IUser extends Document {
   email: string;
