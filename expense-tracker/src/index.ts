@@ -1,5 +1,8 @@
 import express, { Request, Response } from "express";
-import mongoose, { Schema } from "mongoose";
+import mongoose, { Document, Schema } from "mongoose";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcrypt";
+import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import cors from "cors";
 
@@ -13,6 +16,7 @@ app.use(
     limit: "16kb",
   }),
 );
+
 app.use(
   cors({
     origin: "", //allowed FE urls here,
@@ -20,6 +24,8 @@ app.use(
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   }),
 );
+
+app.use(cookieParser());
 
 dotenv.config({
   path: "./.env",
@@ -41,6 +47,14 @@ app.get("/", (req: Request, res: Response) => {
     */
 }
 
+interface IUser extends Document {
+  email: string;
+  username: string;
+  password: string;
+  isPasswordCorrect(password: string): Promise<boolean>;
+  generateAccessToken(): Promise<string>;
+}
+
 const connectDB = async () => {
   try {
     await mongoose.connect(process.env.MONGO_URI ?? "");
@@ -53,7 +67,7 @@ const connectDB = async () => {
 
 connectDB();
 
-const userSchema = new Schema(
+const userSchema = new Schema<IUser>(
   {
     username: {
       type: String,
@@ -68,13 +82,13 @@ const userSchema = new Schema(
       trim: true,
       lowercase: true,
     },
-    fullName: {
-      type: String,
-      trim: true,
-    },
+    //   type: String,
+    //   trim: true,
+    // },
     password: {
       type: String,
       required: [true, "Password is required"],
+      minlength: 6,
     },
   },
   {
@@ -105,20 +119,40 @@ const expenseSchema = new Schema(
   { timestamps: true },
 );
 
-const User = mongoose.model("User", userSchema);
+userSchema.pre("save", async function (next: any) {
+  if (!this.isModified("password")) return; //next();
+  this.password = await bcrypt.hash(this.password, 10);
+  //   next();
+});
 
+userSchema.methods.isPasswordCorrect = async function (password: string) {
+  console.log(password, this.password);
+  return bcrypt.compare(password, this.password);
+};
+
+userSchema.methods.generateAccessToken = async function () {
+  return jwt.sign(
+    {
+      _id: this._id,
+      email: this.email,
+      username: this.username,
+    },
+    "process.env.ACCESS_TOKEN_SECRET",
+    { expiresIn: 1 },
+  );
+};
+
+const User = mongoose.model<IUser>("User", userSchema);
 const Expense = mongoose.model("Expense", expenseSchema);
 
 // auth
-app.get("/register", async (req: Request, res: Response) => {
+app.post("/register", async (req: Request, res: Response) => {
   const { username, email, password } = req.body;
 
-  // validation for required fileds
   if (!username || !email || !password) {
     throw new Error();
   }
 
-  // check in DB if user alredy exists with the same email
   const existedUser = await User.findOne({
     $or: [{ username }, { email }],
   });
@@ -127,8 +161,6 @@ app.get("/register", async (req: Request, res: Response) => {
     throw new Error("409, User with email or username already exists");
   }
 
-  // haspassword before saving
-  // create user
   const user = await User.create({
     email,
     password,
@@ -139,12 +171,10 @@ app.get("/register", async (req: Request, res: Response) => {
     validateBeforeSave: false,
   });
 
-  const createdUser = User.findById(user._id).select("-password");
+  const createdUser = await User.findById(user._id).select("-password");
   if (!createdUser) {
     throw new Error("500, Something went wrong");
   }
-
-  // geberate token
 
   return res.status(201).json({
     user: createdUser,
@@ -152,30 +182,46 @@ app.get("/register", async (req: Request, res: Response) => {
   });
 });
 
-app.get("/login", async (req: Request, res: Response) => {
+app.post("/login", async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
-  // validation for required fileds
-  if (!email || !password) {
-    throw new Error("Email or password is missing");
+  if (!email) {
+    return res.status(400).json({
+      message: "Email is required",
+    });
   }
 
-  const existedUser = User.findOne({
-    email,
-  });
-
-  if (!existedUser) {
-    throw new Error("blablablab");
+  const user = await User.findOne({ email });
+  if (!user) {
+    return res.status(404).json({
+      message: "User with provided email does not exist",
+    });
   }
 
-  //   if (existedUser?.password !== password) {
-  //     throw new Error("Password does not match");
-  //   }
+    const isPasswordValid = await user.isPasswordCorrect(password);
+    
+  if (!isPasswordValid) {
+    return res.status(401).json({
+      message: "Invalid credentials",
+    });
+  }
 
-  return res.status(201).json({
-    //   user,
-    message: "User created successfully",
-  });
+  const accessToken = await user.generateAccessToken();
+  const loggedInUser = await User.findById(user._id).select("-password");
+
+  return res
+    .status(200)
+    .cookie("accessToken", accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict", //CSRF protection
+      maxAge: 24 * 60 * 60 * 1000, // 1 day
+    })
+    .json({
+      user: loggedInUser,
+      accessToken,
+      message: "User logged in successfully",
+    });
 });
 
 // expense
