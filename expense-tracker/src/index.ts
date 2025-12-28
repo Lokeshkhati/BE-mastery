@@ -203,11 +203,155 @@ app.post("/expense", async (req: Request, res: Response) => {
   });
 });
 
+// /expense?search=abacaa&filter=custom&startDate=2024-01-01&endDate=2024-03-31&sort="a-z"
+// /expense?page=1&limit=10
+// /expense?search=food&filter=past_month&sort=amount-high&page=1&limit=20
+// /expense?filter=custom&startDate=2024-01-01&endDate=2024-03-31&page=2
+
+enum FilterEnum {
+  TODAY = "today",
+  YESTERDAY = "yesterday",
+  PAST_WEEK = "past_week",
+  PAST_MONTH = "past_month",
+  LAST_3_MONTHS = "last_3_months",
+  CUSTOM = "custom",
+}
+
+enum SortOptionEnum {
+  A_Z = "a-z",
+  Z_A = "z-a",
+  AMOUNT_HIGH = "amount_high",
+  AMOUNT_LOW = "amount_low",
+  NEWEST_DATE = "newest_date",
+  OLDEST_DATE = "oldest_date",
+}
+
+const SORT_OPTIONS: Record<SortOptionEnum, Record<string, 1 | -1>> = {
+  [SortOptionEnum.A_Z]: { description: 1 },
+  [SortOptionEnum.Z_A]: { description: -1 },
+  [SortOptionEnum.AMOUNT_HIGH]: { amount: -1 },
+  [SortOptionEnum.AMOUNT_LOW]: { amount: 1 },
+  [SortOptionEnum.NEWEST_DATE]: { createdAt: -1 },
+  [SortOptionEnum.OLDEST_DATE]: { createdAt: 1 },
+};
+
 app.get("/expense", async (req: Request, res: Response) => {
-  const expenses = await Expense.find({});
+  const {
+    search,
+    filter,
+    startDate,
+    endDate,
+    sort,
+    page = 1,
+    limit = 10,
+  } = req.query;
+
+  const query: any = {};
+  if (search) {
+    query.$or = [
+      { description: { $regex: search, $options: "i" } },
+      { category: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  let dateQuery: any = {};
+  const now = new Date();
+  console.log({ filter });
+
+  if (filter === FilterEnum.TODAY) {
+    const startOfTheDay = new Date(now);
+    const endOfTheDay = new Date(now);
+    startOfTheDay.setHours(0, 0, 0, 0);
+    endOfTheDay.setHours(23, 59, 59, 999);
+    dateQuery = {
+      $gte: startOfTheDay,
+      $lte: endOfTheDay,
+    };
+  }
+
+  if (filter === FilterEnum.YESTERDAY) {
+    const startOfYesterday = new Date(now);
+    const endOfYesterday = new Date(now);
+
+    startOfYesterday.setDate(now.getDate() - 1);
+    endOfYesterday.setDate(now.getDate() - 1);
+    startOfYesterday.setHours(0, 0, 0, 0);
+    endOfYesterday.setHours(23, 59, 59, 999);
+
+    dateQuery = {
+      $gte: startOfYesterday,
+      $lte: endOfYesterday,
+    };
+  }
+
+  if (filter === FilterEnum.PAST_WEEK) {
+    const weekAgo = new Date(now);
+    weekAgo.setDate(now.getDate() - 7);
+    weekAgo.setHours(0, 0, 0, 0);
+    dateQuery = { $gte: weekAgo };
+  }
+  if (filter === FilterEnum.PAST_MONTH) {
+    const monthAgo = new Date(now);
+    monthAgo.setMonth(now.getMonth() - 1);
+    monthAgo.setHours(0, 0, 0, 0);
+    dateQuery = { $gte: monthAgo };
+  }
+  if (filter === FilterEnum.LAST_3_MONTHS) {
+    const threeMonthsAgo = new Date(now);
+    threeMonthsAgo.setMonth(now.getMonth() - 3);
+    threeMonthsAgo.setHours(0, 0, 0, 0);
+    dateQuery = { $gte: threeMonthsAgo };
+  }
+  if (filter === FilterEnum.CUSTOM) {
+    if (!startDate && !endDate) {
+      throw new Error("start date and end date both are required fields.");
+    }
+    const start = new Date(startDate as string);
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date(endDate as string);
+    end.setHours(23, 59, 59, 999);
+
+    // Validate dates
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return res.status(400).json({ message: "Invalid date format" });
+    }
+
+    if (start > end) {
+      return res.status(400).json({
+        message: "startDate must be before or equal to endDate",
+      });
+    }
+
+    dateQuery = {
+      $gte: start,
+      $lte: end,
+    };
+  }
+
+  if (Object.keys(dateQuery).length > 0) {
+    query.createdAt = dateQuery;
+  }
+
+  const sortOption = SORT_OPTIONS[sort as SortOptionEnum] || { createdAt: -1 };
+
+  const pageNumber = parseInt(page as string);
+  const limitNum = parseInt(limit as string);
+  const skip = (pageNumber - 1) * limitNum;
+  console.log([query]);
+  const expenses = await Expense.find(query)
+    .sort(sortOption)
+    .skip(skip)
+    .limit(limitNum);
+
+  const totalExpenses = await Expense.countDocuments(query);
+  const totalPages = Math.ceil(totalExpenses / limitNum);
 
   res.status(200).json({
-    expenses,
+    data: expenses,
+    totalPages,
+    page: pageNumber,
+    totalElements: totalExpenses,
     message: "Expenses fetched successfully",
   });
 });
@@ -255,21 +399,20 @@ app.put("/expense/:expenseId", async (req: Request, res: Response) => {
 });
 
 app.delete("/expense/:expenseId", async (req: Request, res: Response) => {
-    const { expenseId } = req.params;
+  const { expenseId } = req.params;
 
   if (!expenseId) {
     throw new Error("NO expense id found");
   }
 
-    const data = await Expense.findByIdAndDelete(expenseId);
-    console.log({data})
+  const data = await Expense.findByIdAndDelete(expenseId);
+  console.log({ data });
 
   res.status(200).json({
     deleted: true,
     message: "Expense deleted successfully",
   });
 });
-
 
 app.listen(process.env.PORT, () => {
   console.log(`Expense tracker app listening on port ${process.env.PORT}`);
