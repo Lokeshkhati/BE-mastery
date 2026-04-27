@@ -1,10 +1,10 @@
 import express, { Request, Response } from "express";
-import mongoose, { Document, Schema } from "mongoose";
-import jwt from "jsonwebtoken";
-import bcrypt from "bcrypt";
+import mongoose, { Schema } from "mongoose";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import cors from "cors";
+import { connectDB } from "./config/db";
+import { User } from "./model/userSchema";
 
 const app = express();
 
@@ -30,54 +30,9 @@ dotenv.config({
   path: "./.env",
 });
 
-interface IUser extends Document {
-  email: string;
-  username: string;
-  password: string;
-  isPasswordCorrect(password: string): Promise<boolean>;
-  generateAccessToken(): Promise<string>;
-}
 
-const connectDB = async () => {
-  try {
-    await mongoose.connect(process.env.MONGO_URI ?? "");
-    console.log("Mongodb connected");
-  } catch (error) {
-    console.log("Mongodb connection failed", error);
-    process.exit(1);
-  }
-};
 
 connectDB();
-
-const userSchema = new Schema<IUser>(
-  {
-    username: {
-      type: String,
-      required: true,
-      unique: true,
-      trim: true,
-    },
-    email: {
-      type: String,
-      required: true,
-      unique: true,
-      trim: true,
-      lowercase: true,
-    },
-    //   type: String,
-    //   trim: true,
-    // },
-    password: {
-      type: String,
-      required: [true, "Password is required"],
-      minlength: 6,
-    },
-  },
-  {
-    timestamps: true,
-  },
-);
 
 const expenseSchema = new Schema(
   {
@@ -102,30 +57,6 @@ const expenseSchema = new Schema(
   { timestamps: true },
 );
 
-userSchema.pre("save", async function (next: any) {
-  if (!this.isModified("password")) return; //next();
-  this.password = await bcrypt.hash(this.password, 10);
-  //   next();
-});
-
-userSchema.methods.isPasswordCorrect = async function (password: string) {
-  console.log(password, this.password);
-  return bcrypt.compare(password, this.password);
-};
-
-userSchema.methods.generateAccessToken = async function () {
-  return jwt.sign(
-    {
-      _id: this._id,
-      email: this.email,
-      username: this.username,
-    },
-    "process.env.ACCESS_TOKEN_SECRET",
-    { expiresIn: 1 },
-  );
-};
-
-const User = mongoose.model<IUser>("User", userSchema);
 const Expense = mongoose.model("Expense", expenseSchema);
 
 // auth
