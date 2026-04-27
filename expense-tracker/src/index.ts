@@ -30,10 +30,6 @@ dotenv.config({
   path: "./.env",
 });
 
-app.get("/", (req: Request, res: Response) => {
-  res.send(`Hello Expense `);
-});
-
 interface IUser extends Document {
   email: string;
   username: string;
@@ -159,6 +155,7 @@ app.post("/register", async (req: Request, res: Response) => {
   });
 
   const createdUser = await User.findById(user._id).select("-password");
+  
   if (!createdUser) {
     throw new Error("500, Something went wrong");
   }
@@ -439,7 +436,7 @@ app.delete("/expense/:expenseId", async (req: Request, res: Response) => {
   }
 
   const data = await Expense.findByIdAndDelete(expenseId);
-  console.log({ data });
+
 
   res.status(200).json({
     deleted: true,
