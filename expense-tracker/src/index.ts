@@ -1,10 +1,11 @@
-import express, { Request, Response } from "express";
-import mongoose, { Schema } from "mongoose";
 import cookieParser from "cookie-parser";
-import dotenv from "dotenv";
 import cors from "cors";
+import dotenv from "dotenv";
+import express, { Request, Response } from "express";
 import { connectDB } from "./config/db";
+import { Expense } from "./model/expenseSchema";
 import { User } from "./model/userSchema";
+import { FilterEnum, SORT_OPTIONS, SortOptionEnum } from "./utils/constants";
 
 const app = express();
 
@@ -30,34 +31,7 @@ dotenv.config({
   path: "./.env",
 });
 
-
-
 connectDB();
-
-const expenseSchema = new Schema(
-  {
-    amount: {
-      type: Number,
-      required: true,
-    },
-    accountType: { type: String, required: true },
-    expenseType: {
-      type: String,
-      required: true,
-    },
-    description: {
-      type: String,
-    },
-    category: {
-      type: String,
-      required: true,
-    },
-    author: { type: Schema.Types.ObjectId, ref: "User" },
-  },
-  { timestamps: true },
-);
-
-const Expense = mongoose.model("Expense", expenseSchema);
 
 // auth
 app.post("/register", async (req: Request, res: Response) => {
@@ -86,7 +60,7 @@ app.post("/register", async (req: Request, res: Response) => {
   });
 
   const createdUser = await User.findById(user._id).select("-password");
-  
+
   if (!createdUser) {
     throw new Error("500, Something went wrong");
   }
@@ -113,8 +87,8 @@ app.post("/login", async (req: Request, res: Response) => {
     });
   }
 
-    const isPasswordValid = await user.isPasswordCorrect(password);
-    
+  const isPasswordValid = await user.isPasswordCorrect(password);
+
   if (!isPasswordValid) {
     return res.status(401).json({
       message: "Invalid credentials",
@@ -169,33 +143,6 @@ app.post("/expense", async (req: Request, res: Response) => {
 // /expense?search=food&filter=past_month&sort=amount-high&page=1&limit=20
 // /expense?filter=custom&startDate=2024-01-01&endDate=2024-03-31&page=2
 
-enum FilterEnum {
-  TODAY = "today",
-  YESTERDAY = "yesterday",
-  PAST_WEEK = "past_week",
-  PAST_MONTH = "past_month",
-  LAST_3_MONTHS = "last_3_months",
-  CUSTOM = "custom",
-}
-
-enum SortOptionEnum {
-  A_Z = "a-z",
-  Z_A = "z-a",
-  AMOUNT_HIGH = "amount_high",
-  AMOUNT_LOW = "amount_low",
-  NEWEST_DATE = "newest_date",
-  OLDEST_DATE = "oldest_date",
-}
-
-const SORT_OPTIONS: Record<SortOptionEnum, Record<string, 1 | -1>> = {
-  [SortOptionEnum.A_Z]: { description: 1 },
-  [SortOptionEnum.Z_A]: { description: -1 },
-  [SortOptionEnum.AMOUNT_HIGH]: { amount: -1 },
-  [SortOptionEnum.AMOUNT_LOW]: { amount: 1 },
-  [SortOptionEnum.NEWEST_DATE]: { createdAt: -1 },
-  [SortOptionEnum.OLDEST_DATE]: { createdAt: 1 },
-};
-
 app.get("/expense", async (req: Request, res: Response) => {
   const {
     search,
@@ -217,7 +164,6 @@ app.get("/expense", async (req: Request, res: Response) => {
 
   let dateQuery: any = {};
   const now = new Date();
-  console.log({ filter });
 
   if (filter === FilterEnum.TODAY) {
     const startOfTheDay = new Date(now);
@@ -363,11 +309,10 @@ app.delete("/expense/:expenseId", async (req: Request, res: Response) => {
   const { expenseId } = req.params;
 
   if (!expenseId) {
-    throw new Error("NO expense id found");
+    throw new Error("No expense id found");
   }
 
-  const data = await Expense.findByIdAndDelete(expenseId);
-
+  await Expense.findByIdAndDelete(expenseId);
 
   res.status(200).json({
     deleted: true,
@@ -378,5 +323,3 @@ app.delete("/expense/:expenseId", async (req: Request, res: Response) => {
 app.listen(process.env.PORT, () => {
   console.log(`Expense tracker app listening on port ${process.env.PORT}`);
 });
-
-// addig new comment 
